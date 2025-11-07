@@ -1,13 +1,20 @@
 #include "ProbitSolver.hpp"
 #include <iostream>
+#include <iomanip>
 
 int main()
 {
+    // std::ios_base::sync_with_stdio(false);
+    // std::cin.tie(NULL);
+
+    double probability;
+    std::cout << std::fixed << std::setprecision(16);
+
     std::string line;
-    while (std::getline(std::cin, line, ' ')) {
-        double probability = std::stod(line);
+    while (std::cin >> probability) {
         if (probability <= 0.0 || probability >= 1.0) {
-            std::cout << "not a valid probability" << std::endl;
+            std::cerr << "Input " << probability << " is not a valid probability. Skipping.\n";
+            std::cout << "nan\n";
             continue;
         }
         std::cout << ProbitSolver::probit(probability) << std::endl;
