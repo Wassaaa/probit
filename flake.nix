@@ -26,8 +26,8 @@
             gdb
             clang
             python313
-            python313Packages.flask
-            python313Packages.pip
+            python313Packages.numpy
+            python313Packages.scipy
           ];
 
           shellHook = ''
