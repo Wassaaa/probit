@@ -34,6 +34,15 @@ private:
         return result;
     }
 
+    /**
+     * @brief Calculates the Standard Normal PDF (the "bell curve" formula).
+     * This is needed for the refinement step.
+     */
+    static inline double norm_pdf(double x)
+    {
+        return (1.0 / (std::sqrt(2.0 * M_PI))) * std::exp(-0.5 * x * x);
+    }
+
     static constexpr double P_LOW = 0.02425;
     static constexpr double P_HIGH = 1.0 - P_LOW;
 
