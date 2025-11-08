@@ -119,7 +119,18 @@ namespace quant {
             return q * polynomial(r, A_) / polynomial(r, B_);
         }
 
-        static inline double tail_value_rational(double x) {}
+        static inline double tail_value_rational(double x) {
+            double q;
+            if (x <= x_low_) {
+                q = std::sqrt(-2.0 * std::log(x));
+            } else {
+                q = std::sqrt(-2.0 * std::log(1.0 - x));
+            }
+
+            double z = polynomial(q, C_) / polynomial(q, D_);
+
+            return (x < x_low_) ? z : -z;
+        }
 
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
         // One-step Halley refinement (3rd order). Usually brings result to full double precision.
