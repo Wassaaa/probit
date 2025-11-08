@@ -8,13 +8,14 @@ from typing import Tuple
 NUM_TESTS = 1_000_000
 
 CPP_BATCH_PROGRAM = "../build/probit"
+CPP_BASE_PROGRAM = "../build/probit_base"
 # ---------------------
 
 
 def generate_test_data(n_tests: int) -> np.ndarray:
     """Generates an array of evenly-spaced test probabilities."""
     print(f"Generating {n_tests} test points...")
-    return np.linspace(0.00001, 0.99999, n_tests)
+    return np.linspace(0.00000001, 0.99999999, n_tests)
 
 
 def get_scipy_answers(test_data: np.ndarray) -> np.ndarray:
@@ -72,7 +73,10 @@ def run_cpp_test(program_path: str, test_data: np.ndarray) -> Tuple[np.ndarray, 
 
 def compare_results(scipy_answers: np.ndarray, cpp_answers: np.ndarray):
     """Calculates and prints the final error between the two results."""
-    valid_indices = ~np.isnan(cpp_answers)
+    # Filter out both NaN and infinity values
+    valid_indices = np.isfinite(cpp_answers)
+
+    num_invalid = len(cpp_answers) - np.sum(valid_indices)
 
     if len(scipy_answers) != len(cpp_answers):
         print(
@@ -80,10 +84,14 @@ def compare_results(scipy_answers: np.ndarray, cpp_answers: np.ndarray):
         )
         return
 
+    if np.sum(valid_indices) == 0:
+        print(f"\nNo valid (finite) values to compare!")
+        return
+
     abs_error = np.abs(scipy_answers[valid_indices] - cpp_answers[valid_indices])
     max_error = np.max(abs_error)
 
-    print(f"\nProcessed {len(cpp_answers)} numbers.")
+    print(f"\nProcessed {len(cpp_answers)} numbers ({num_invalid} invalid/infinite).")
     print(f"Maximum Error (vs SciPy): {max_error: .2e}")
 
 
@@ -95,8 +103,16 @@ if __name__ == "__main__":
     cpp_results, cpp_time_ns = run_cpp_test(CPP_BATCH_PROGRAM, test_data)
     print("\n--- Performance Report ---")
     if cpp_time_ns > 0:
-        print(f"C++ (fast batch) core math took: {cpp_time_ns / 1.0e9:.4f}s")
+        print(f"C++ ${CPP_BATCH_PROGRAM} core math took: {cpp_time_ns / 1.0e9:.4f}s")
     else:
-        print("C++ (fast batch) did not report a valid time.")
+        print("C++ ${CPP_BATCH_PROGRAM} did not report a valid time.")
+    compare_results(scipy_answers, cpp_results)
+
+    cpp_results, cpp_time_ns = run_cpp_test(CPP_BASE_PROGRAM, test_data)
+    print("\n--- Performance Report ---")
+    if cpp_time_ns > 0:
+        print(f"C++ ${CPP_BASE_PROGRAM} core math took: {cpp_time_ns / 1.0e9:.4f}s")
+    else:
+        print("C++ ${CPP_BASE_PROGRAM} did not report a valid time.")
 
     compare_results(scipy_answers, cpp_results)
