@@ -82,13 +82,13 @@ def run_batch_test(test_data: np.ndarray) -> np.ndarray:
     return np.array([float(line) for line in output_lines])
 
 
-def _worker_run_batch(chunk_of_data: np.ndarray) -> List[float]:
+def _worker_run_batch(input_string: str) -> str:
     """
-    This is the "worker" function that each process will run.
-    It runs the SERIAL C++ batch program on its assigned chunk.
+    This is the "clean" worker function.
+    It ONLY runs the subprocess.
+    It receives one big string and returns one big string.
+    All string conversion is done outside this function.
     """
-    input_string = "\n".join(map(str, chunk_of_data))
-
     result = subprocess.run(
         [CPP_BATCH_PROGRAM],
         input=input_string,
@@ -96,32 +96,38 @@ def _worker_run_batch(chunk_of_data: np.ndarray) -> List[float]:
         text=True,
         check=True,
     )
-    output_lines = result.stdout.strip().split("\n")
-    return [float(line) for line in output_lines]
+    # Just return the raw string output
+    return result.stdout
 
 
-def run_python_parallel_orchestrator(test_data: np.ndarray) -> np.ndarray:
+def run_python_multiprocessing(test_data: np.ndarray) -> np.ndarray:
     """
     Tests the "Python-as-Orchestrator" model.
-    It splits the work into chunks and runs them on
-    parallel C++ processes using multiprocessing.Pool.
+    It pre-processes the strings, then times ONLY the parallel subprocess calls.
     """
     print(f"\n--- Starting 'Python Parallel Orchestrator' Test ---")
     print(f"Detected {N_CORES} CPU cores.")
     print(f"Splitting {len(test_data)} numbers into {N_CORES} chunks...")
 
+    # Pre-processing
     chunks = np.array_split(test_data, N_CORES)
-    print(f"Each chunk has ~{len(chunks[0])} numbers.")
+    input_strings: List[str] = ["\n".join(map(str, chunk)) for chunk in chunks]
 
+    # Parallel processes
+    print(f"Starting {N_CORES} parallel processes...")
     start_cpp = time.time()
-
     with multiprocessing.Pool(processes=N_CORES) as pool:
-        results_from_all_chunks = pool.map(_worker_run_batch, chunks)
-
+        output_strings: List[str] = pool.map(_worker_run_batch, input_strings)
     cpp_time = time.time() - start_cpp
-    print(f"Python Orchestrator took: {cpp_time:.4f}s")
 
-    all_results = [item for sublist in results_from_all_chunks for item in sublist]
+    print(f"C++ (parallel orchestrator) took: {cpp_time:.4f}s")
+
+    # Post-processing
+    all_results = []
+    for string in output_strings:
+        if string:
+            all_results.extend([float(line) for line in string.strip().split("\n")])
+
     return np.array(all_results)
 
 
@@ -177,13 +183,13 @@ if __name__ == "__main__":
     # cpp_results = run_stream_test(test_data)
 
     # --- Test B: The "Fast" Serial Batch ---
-    cpp_results = run_batch_test(test_data)
+    # cpp_results = run_batch_test(test_data)
 
     # --- Test C: The "Fastest" Parallel Batch (C++ handles threads) ---
     # cpp_results = run_parallel_test(test_data)
 
     # --- Test D: The "Python Orchestrator" (Python handles processes) ---
-    # cpp_results = run_python_parallel_orchestrator(test_data)
+    cpp_results = run_python_multiprocessing(test_data)
 
     # 4. Compare the results
     compare_results(scipy_answers, cpp_results)
