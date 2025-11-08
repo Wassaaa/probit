@@ -133,17 +133,41 @@ namespace quant {
         }
 
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
-        // One-step Halley refinement (3rd order). Usually brings result to full double precision.
+        // Use logarithmic form with expm1 to compute the difference on the extreme tails.
         static inline double halley_refine(double z, double x) {
-            // r = (Φ(z) - x) / φ(z)
-            const double f = Phi(z);
-            const double p = phi(z);
-            const double r = (f - x) / std::max(p, std::numeric_limits<double>::min());
-            // Halley: z_{new} = z - r / (1 - 0.5*z*r)
+            constexpr double TAIL_THRESHOLD = 1e-5;
+            const double p = phi(z); // φ(z) = PDF value
+            double r;                // The residual: (Φ(z) - x) / φ(z)
+
+            if (x > 1.0 - TAIL_THRESHOLD) {
+                // Right tail (x > 0.5): y = 1 - x ≪ 1 and q = Q(z) = 1 - Φ(z)
+                // Formula: r = -y × expm1(log(q) - log(y)) / φ(z)
+                const double y = 1.0 - x;
+                const double q = Phi(-z); // Q(z) = 1 - Φ(z) = Φ(-z) by symmetry
+                r = -y * std::expm1(std::log(q) - std::log(y)) /
+                    std::max(p, std::numeric_limits<double>::min());
+
+            } else if (x < TAIL_THRESHOLD) {
+                // Left tail (x < 0.5): y = x ≪ 1 and a = Φ(z)
+                // Formula: r = y × expm1(log(a) - log(y)) / φ(z)
+                const double y = x;
+                const double a = Phi(z);
+                r = y * std::expm1(std::log(a) - std::log(y)) /
+                    std::max(p, std::numeric_limits<double>::min());
+
+            } else {
+                // Central region: x not extreme, direct computation is stable
+                // Simply compute r = (Φ(z) - x) / φ(z) directly
+                const double f = Phi(z);
+                r = (f - x) / std::max(p, std::numeric_limits<double>::min());
+            }
+
+            // Apply Halley's method correction: z_new = z - r / (1 - 0.5*z*r)
             const double denom = 1.0 - 0.5 * z * r;
-            return z - r / (denom != 0.0
-                                ? denom
-                                : std::copysign(std::numeric_limits<double>::infinity(), denom));
+            const double correction =
+                r / (denom != 0.0 ? denom
+                                  : std::copysign(std::numeric_limits<double>::infinity(), denom));
+            return z - correction;
         }
 #endif
 
