@@ -2,16 +2,12 @@ import subprocess
 import time
 import numpy as np
 from scipy.stats import norm
-import multiprocessing
-from typing import List
+from typing import Tuple
 
 
 NUM_TESTS = 1_000_000
-N_CORES = multiprocessing.cpu_count()
 
-CPP_STREAM_PROGRAM = "../build/probit_stream"
-CPP_BATCH_PROGRAM = "../build/probit_batch"
-CPP_PARALLEL_PROGRAM = "../build/probit_parallel"
+CPP_BATCH_PROGRAM = "../build/probit"
 # ---------------------
 
 
@@ -30,135 +26,52 @@ def get_scipy_answers(test_data: np.ndarray) -> np.ndarray:
     return scipy_answers
 
 
-def run_stream_test(test_data: np.ndarray):
+def _parse_time_from_stderr(stderr_output: str) -> int:
     """
-    Tests the "slow" C++ streamer by calling it
-    once for every single number.
+    Finds the 'time_ns:...' line in stderr and returns the time in nanoseconds.
+    Returns 0 if the line isn't found.
     """
-    print("\n--- Starting one-by-one process call Test ---")
-    print(f"Testing {len(test_data)} numbers, one process at a time...")
-
-    cpp_answers: List[float] = []
-    start_cpp = time.time()
-
-    for p in test_data:
-        result = subprocess.run(
-            [CPP_STREAM_PROGRAM],
-            input=str(p),
-            capture_output=True,
-            text=True,
-            check=True,
+    for line in stderr_output.strip().split("\n"):
+        if line.startswith("time_ns:"):
+            try:
+                time_str = line.split(":", 1)[1]
+                return int(time_str)
+            except (IndexError, ValueError):
+                print(f"Warning: Found malformed time line in stderr: {line}")
+                return 0
+    if stderr_output:
+        print(
+            f"Warning: No 'time_ns:' line found in stderr. Got this instead:\n{stderr_output}"
         )
-        cpp_answers.append(float(result.stdout.strip()))
-
-    cpp_time = time.time() - start_cpp
-    print(f"C++ (slow stream) took: {cpp_time:.4f}s")
-    print(f"Time per calculation: {cpp_time / len(test_data) * 1000:.4f} milliseconds")
-    return np.array(cpp_answers)
+    return 0
 
 
-def run_batch_test(test_data: np.ndarray) -> np.ndarray:
+def run_cpp_test(program_path: str, test_data: np.ndarray) -> Tuple[np.ndarray, int]:
     """
-    Tests the "fast" C++ serial batch program.
-    It calls it ONCE for all numbers.
+    Runs a C++ program, feeds it data, and captures its
+    stdout (results) and stderr (timing).
     """
-    print("\n--- Starting Serial C++ Test ---")
+    print(f"\n--- Testing C++ Program: {program_path} ---")
     print(f"Testing {len(test_data)} numbers in a single batch...")
 
     input_string = "\n".join(map(str, test_data))
 
-    start_cpp = time.time()
     result = subprocess.run(
-        [CPP_BATCH_PROGRAM],
+        [program_path],
         input=input_string,
         capture_output=True,
         text=True,
         check=True,
     )
-    cpp_time = time.time() - start_cpp
-    print(f"C++ (fast batch) took: {cpp_time:.4f}s")
 
     output_lines = result.stdout.strip().split("\n")
-    return np.array([float(line) for line in output_lines])
-
-
-def _worker_run_batch(input_string: str) -> str:
-    """
-    This is the "clean" worker function.
-    It ONLY runs the subprocess.
-    It receives one big string and returns one big string.
-    All string conversion is done outside this function.
-    """
-    result = subprocess.run(
-        [CPP_BATCH_PROGRAM],
-        input=input_string,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    # Just return the raw string output
-    return result.stdout
-
-
-def run_python_multiprocessing(test_data: np.ndarray) -> np.ndarray:
-    """
-    Tests the "Python-as-Orchestrator" model.
-    It pre-processes the strings, then times ONLY the parallel subprocess calls.
-    """
-    print(f"\n--- Starting 'Python Parallel Orchestrator' Test ---")
-    print(f"Detected {N_CORES} CPU cores.")
-    print(f"Splitting {len(test_data)} numbers into {N_CORES} chunks...")
-
-    # Pre-processing
-    chunks = np.array_split(test_data, N_CORES)
-    input_strings: List[str] = ["\n".join(map(str, chunk)) for chunk in chunks]
-
-    # Parallel processes
-    print(f"Starting {N_CORES} parallel processes...")
-    start_cpp = time.time()
-    with multiprocessing.Pool(processes=N_CORES) as pool:
-        output_strings: List[str] = pool.map(_worker_run_batch, input_strings)
-    cpp_time = time.time() - start_cpp
-
-    print(f"C++ (parallel orchestrator) took: {cpp_time:.4f}s")
-
-    # Post-processing
-    all_results = []
-    for string in output_strings:
-        if string:
-            all_results.extend([float(line) for line in string.strip().split("\n")])
-
-    return np.array(all_results)
-
-
-def run_parallel_test(test_data: np.ndarray) -> np.ndarray:
-    """
-    Tests the "fastest" C++ parallel program.
-    It calls it ONCE for all numbers.
-    """
-    print("\n--- Starting Parallel C++ Test ---")
-    print(f"Testing {len(test_data)} numbers in a single batch (C++ parallel)...")
-
-    input_string = "\n".join(map(str, test_data))
-
-    start_cpp = time.time()
-    result = subprocess.run(
-        [CPP_PARALLEL_PROGRAM],
-        input=input_string,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    cpp_time = time.time() - start_cpp
-    print(f"C++ (fastest batch) took: {cpp_time:.4f}s")
-
-    output_lines = result.stdout.strip().split("\n")
-    return np.array([float(line) for line in output_lines])
+    cpp_answers = np.array([float(line) for line in output_lines])
+    cpp_time_ns = _parse_time_from_stderr(result.stderr)
+    return cpp_answers, cpp_time_ns
 
 
 def compare_results(scipy_answers: np.ndarray, cpp_answers: np.ndarray):
     """Calculates and prints the final error between the two results."""
-    # Filter out any 'nan' values from our C++ error handling
     valid_indices = ~np.isnan(cpp_answers)
 
     if len(scipy_answers) != len(cpp_answers):
@@ -170,8 +83,7 @@ def compare_results(scipy_answers: np.ndarray, cpp_answers: np.ndarray):
     abs_error = np.abs(scipy_answers[valid_indices] - cpp_answers[valid_indices])
     max_error = np.max(abs_error)
 
-    print("\n--- Test Results ---")
-    print(f"Processed {len(cpp_answers)} numbers.")
+    print(f"\nProcessed {len(cpp_answers)} numbers.")
     print(f"Maximum Error (vs SciPy): {max_error: .2e}")
 
 
@@ -180,16 +92,11 @@ if __name__ == "__main__":
     test_data = generate_test_data(NUM_TESTS)
     scipy_answers = get_scipy_answers(test_data)
 
-    # cpp_results = run_stream_test(test_data)
+    cpp_results, cpp_time_ns = run_cpp_test(CPP_BATCH_PROGRAM, test_data)
+    print("\n--- Performance Report ---")
+    if cpp_time_ns > 0:
+        print(f"C++ (fast batch) core math took: {cpp_time_ns / 1.0e9:.4f}s")
+    else:
+        print("C++ (fast batch) did not report a valid time.")
 
-    # --- Test B: The "Fast" Serial Batch ---
-    # cpp_results = run_batch_test(test_data)
-
-    # --- Test C: The "Fastest" Parallel Batch (C++ handles threads) ---
-    # cpp_results = run_parallel_test(test_data)
-
-    # --- Test D: The "Python Orchestrator" (Python handles processes) ---
-    cpp_results = run_python_multiprocessing(test_data)
-
-    # 4. Compare the results
     compare_results(scipy_answers, cpp_results)
