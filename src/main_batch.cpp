@@ -17,15 +17,12 @@ int main() {
 
     quant::InverseCumulativeNormal icn; // mean=0, sigma=1
 
-    // prep the results array for the timed loop
-    std::vector<double> results;
-    results.reserve(probabilities.size());
+    // Allocate results array
+    std::vector<double> results(probabilities.size());
 
-    // time and math
+    // time and math - using vector overload
     auto start = std::chrono::high_resolution_clock::now();
-    for (double x : probabilities) {
-        results.push_back(icn(x));
-    }
+    icn(probabilities.data(), results.data(), probabilities.size());
     auto end = std::chrono::high_resolution_clock::now();
 
     // print out the result
