@@ -25,6 +25,7 @@
             gcc
             gdb
             clang
+            perf
             python313
             python313Packages.numpy
             python313Packages.scipy

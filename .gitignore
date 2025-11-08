@@ -6,3 +6,5 @@ out
 .vscode
 .direnv
 *.old*
+perf.data
+test_data.txt

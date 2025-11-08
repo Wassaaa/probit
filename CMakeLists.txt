@@ -6,7 +6,7 @@ project(probit LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_compile_options(-Wall -Wextra -Werror)
+add_compile_options(-O3)
 
 add_library(probit_engine STATIC
     src/ProbitSolver.cpp
@@ -15,7 +15,7 @@ add_library(probit_engine STATIC
 target_include_directories(probit_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-target_compile_options(probit_engine PRIVATE -O3)
+# target_compile_options(probit_engine PRIVATE -O3)
 
 # --- Program A: The "Slow Streamer" ---
 add_executable(probit_stream
@@ -37,11 +37,11 @@ target_link_libraries(probit_batch PRIVATE probit_engine)
 # This one needs std::thread, so we have to find the 'Threads' package
 find_package(Threads REQUIRED)
 
-add_executable(probit_batch_parallel
+add_executable(probit_parallel
     src/main_parallel.cpp
 )
 # Link against the engine AND the Threads library
-target_link_libraries(probit_batch_parallel PRIVATE
+target_link_libraries(probit_parallel PRIVATE
     probit_engine
     Threads::Threads
 )
