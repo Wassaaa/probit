@@ -19,11 +19,6 @@ int main()
     std::cout << std::fixed << std::setprecision(16);
 
     for (double prob : probabilities) {
-        if (prob <= 0.0 || prob >= 1.0) {
-            std::cerr << "Input " << prob << " is not a valid probability. Skipping.\n";
-            std::cout << "nan\n";
-            continue;
-        }
         std::cout << ProbitSolver::probit(prob) << "\n";
     }
 
