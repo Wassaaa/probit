@@ -3,33 +3,55 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(probit LANGUAGES CXX)
 
+# ============================================================================
+# C++ Standard
+# ============================================================================
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_compile_options(-O3)
+# ============================================================================
+# Compiler Options
+# ============================================================================
+add_compile_options(-O3 -fopt-info-vec-optimized)
 
+# ============================================================================
+# Find Dependencies
+# ============================================================================
+find_package(OpenMP REQUIRED)
+
+# ============================================================================
+# Interface Libraries (header-only)
+# ============================================================================
 add_library(icn INTERFACE)
-add_library(icn_base INTERFACE)
-
 target_include_directories(icn INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+
+add_library(icn_base INTERFACE)
 target_include_directories(icn_base INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-add_executable(probit
-    src/main_batch.cpp
+# ============================================================================
+# Optimized Executable
+# ============================================================================
+add_executable(probit src/main_batch.cpp)
+target_link_libraries(probit PRIVATE
+    icn
+    OpenMP::OpenMP_CXX
 )
-# Link our batch program against the engine
-target_link_libraries(probit PRIVATE icn)
-# Add refinement flag
-target_compile_definitions(probit PRIVATE ICN_ENABLE_HALLEY_REFINEMENT)
+target_compile_definitions(probit PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+)
 
-add_executable(probit_base
-    src/main_base.cpp
+# ============================================================================
+# Baseline Executable
+# ============================================================================
+add_executable(probit_base src/main_base.cpp)
+target_link_libraries(probit_base PRIVATE
+    icn_base
+    OpenMP::OpenMP_CXX
 )
-# Link our batch program against the engine
-target_link_libraries(probit_base PRIVATE icn_base)
-# Add refinement flag
-target_compile_definitions(probit_base PRIVATE ICN_ENABLE_HALLEY_REFINEMENT)
+target_compile_definitions(probit_base PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+)

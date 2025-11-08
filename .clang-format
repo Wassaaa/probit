@@ -20,6 +20,13 @@
 # TabWidth (unsigned)
 # The number of columns used for tab stops.
 # TabWidth: 4
+# Possible values:
+#     PPDIS_None (in configuration: None)
+#     PPDIS_AfterHash (in configuration: AfterHash)
+#     PPDIS_BeforeHash (in configuration: BeforeHash)
+#     PPDIS_Leave (in configuration: Leave)
+
+IndentPPDirectives: Leave
 
 # IndentWidth (unsigned)
 # The number of columns to use for indentation.

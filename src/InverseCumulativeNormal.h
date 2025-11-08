@@ -4,6 +4,8 @@
 #include <limits>
 #include <algorithm>
 #include <array>
+#include <omp.h>
+#include <iostream>
 
 namespace quant {
 
@@ -19,6 +21,7 @@ namespace quant {
 
         // Vector overload: out[i] = average + sigma * Φ^{-1}(in[i]) for i in [0, n)
         inline void operator()(const double *in, double *out, std::size_t n) const {
+            #pragma omp parallel for
             for (std::size_t i = 0; i < n; ++i) {
                 out[i] = average_ + sigma_ * standard_value(in[i]);
             }
@@ -35,15 +38,15 @@ namespace quant {
             // Piecewise structure left in place so you can drop in rational approximations.
             if (x < x_low_ || x > x_high_) {
                 double z = tail_value_rational(x);
-#ifdef ICN_ENABLE_HALLEY_REFINEMENT
+                #ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
-#endif
+                #endif
                 return z;
             } else {
                 double z = central_value_rational(x);
-#ifdef ICN_ENABLE_HALLEY_REFINEMENT
+                #ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
-#endif
+                #endif
                 return z;
             }
         }
@@ -132,7 +135,7 @@ namespace quant {
             return (x < x_low_) ? z : -z;
         }
 
-#ifdef ICN_ENABLE_HALLEY_REFINEMENT
+        #ifdef ICN_ENABLE_HALLEY_REFINEMENT
         // Use logarithmic form with expm1 to compute the difference on the extreme tails.
         static inline double halley_refine(double z, double x) {
             constexpr double TAIL_THRESHOLD = 1e-5;
@@ -169,7 +172,7 @@ namespace quant {
                                   : std::copysign(std::numeric_limits<double>::infinity(), denom));
             return z - correction;
         }
-#endif
+        #endif
 
         // ---- State & constants ---------------------------------------------------
 
