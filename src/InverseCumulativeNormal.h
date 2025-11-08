@@ -34,13 +34,13 @@ namespace quant {
 
             // Piecewise structure left in place so you can drop in rational approximations.
             if (x < x_low_ || x > x_high_) {
-                double z = tail_value_baseline(x); // << replace with tail mapping + rational
+                double z = tail_value_rational(x);
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
 #endif
                 return z;
             } else {
-                double z = central_value_baseline(x); // << replace with central-region rational
+                double z = central_value_rational(x);
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
 #endif
@@ -103,14 +103,7 @@ namespace quant {
             return invert_bisect(x);
         }
 
-        /**
-         * @brief This function implements "Horner's method" for fast
-         * and stable polynomial evaluation.
-         * @tparam N The number of coefficients in the array
-         * @param x The variable
-         * @param coeffs The array of coefficients
-         * @returns The evaluated polynomial result
-         */
+        // Polynomial evaluation, Horner's method
         template <size_t N>
         static inline double polynomial(double x, const std::array<double, N> &coeffs) {
             double result = 0.0;
@@ -120,7 +113,11 @@ namespace quant {
             return result;
         }
 
-        static inline double central_value_rational(double x) {}
+        static inline double central_value_rational(double x) {
+            double q = x - 0.5;
+            double r = q * q;
+            return q * polynomial(r, A_) / polynomial(r, B_);
+        }
 
         static inline double tail_value_rational(double x) {}
 
@@ -148,7 +145,7 @@ namespace quant {
         static constexpr double x_high_ = 1.0 - x_low_;
 
         // Acklam's coefficients
-        static constexpr std::array<double, 6> A = {
+        static constexpr std::array<double, 6> A_ = {
             -3.969683028665376e+01, //
             2.209460984245205e+02,  //
             -2.759285104469687e+02, //
@@ -156,7 +153,7 @@ namespace quant {
             -3.066479806614716e+01, //
             2.506628277459239e+00   //
         };
-        static constexpr std::array<double, 6> B = {
+        static constexpr std::array<double, 6> B_ = {
             -5.447609879822406e+01, //
             1.615858368580409e+02,  //
             -1.556989798598866e+02, //
@@ -164,7 +161,7 @@ namespace quant {
             -1.328068155288572e+01, //
             1.0                     //
         };
-        static constexpr std::array<double, 6> C = {
+        static constexpr std::array<double, 6> C_ = {
             -7.784894002430293e-03, //
             -3.223964580411365e-01, //
             -2.400758277161838e+00, //
@@ -172,7 +169,7 @@ namespace quant {
             4.374664141464968e+00,  //
             2.938163982698783e+00   //
         };
-        static constexpr std::array<double, 5> D = {
+        static constexpr std::array<double, 5> D_ = {
             7.784695709041462e-03, //
             3.224671290700398e-01, //
             2.445134137142996e+00, //
