@@ -1,118 +1,91 @@
 import subprocess
-import time
 import numpy as np
 from scipy.stats import norm
-from typing import Tuple
-
 
 NUM_TESTS = 1_000_000
 
-CPP_BATCH_PROGRAM = "./build/probit_batch"
-CPP_BASE_PROGRAM = "./build/probit_base"
-# ---------------------
+PROGRAMS = [
+    ("./build/probit_base", "Bisection baseline"),
+    ("./build/probit_scalar_single", "Acklam + refinement"),
+    ("./build/probit_simd_single", "Acklam + SIMD + refinement"),
+    ("./build/probit_scalar_omp", "Acklam + OpenMP + refinement"),
+    ("./build/probit", "Acklam + SIMD + OpenMP + refinement"),
+    ("./build/probit_simd_omp", "Acklam + SIMD + OpenMP (no refinement)"),
+]
 
 
-def generate_test_data(n_tests: int) -> np.ndarray:
-    """Generates an array of evenly-spaced test probabilities."""
-    print(f"Generating {n_tests} test points...")
-    return np.linspace(0.00000001, 0.99999999, n_tests)
+def generate_test_data(n: int) -> np.ndarray:
+    print(f"Generating {n:,} test points...")
+    return np.linspace(1e-12, 1 - 1e-12, n)
 
 
-def get_scipy_answers(test_data: np.ndarray) -> np.ndarray:
-    """Gets the "true" answers from SciPy."""
-    print("Generating SciPy answers...")
-    start_time = time.time()
-    scipy_answers = norm.ppf(test_data)
-    print(f"SciPy generation took: {time.time() - start_time:.4f}s")
-    return scipy_answers
+def get_scipy_reference(data: np.ndarray) -> np.ndarray:
+    print("Computing SciPy reference values...\n")
+    return norm.ppf(data)
 
 
-def _parse_time_from_stderr(stderr_output: str) -> int:
-    """
-    Finds the 'time_ns:...' line in stderr and returns the time in nanoseconds.
-    Returns 0 if the line isn't found.
-    """
-    for line in stderr_output.strip().split("\n"):
-        if line.startswith("time_ns:"):
-            try:
-                time_str = line.split(":", 1)[1]
-                return int(time_str)
-            except (IndexError, ValueError):
-                print(f"Warning: Found malformed time line in stderr: {line}")
-                return 0
-    if stderr_output:
-        print(
-            f"Warning: No 'time_ns:' line found in stderr. Got this instead:\n{stderr_output}"
-        )
-    return 0
-
-
-def run_cpp_test(program_path: str, test_data: np.ndarray) -> Tuple[np.ndarray, int]:
-    """
-    Runs a C++ program, feeds it data, and captures its
-    stdout (results) and stderr (timing).
-    """
-    print(f"\n--- Testing C++ Program: {program_path} ---")
-    print(f"Testing {len(test_data)} numbers in a single batch...")
-
-    input_string = "\n".join(map(str, test_data))
-
+def run_program(path: str, data: np.ndarray) -> tuple[np.ndarray, float]:
+    input_str = "\n".join(map(str, data))
     result = subprocess.run(
-        [program_path],
-        input=input_string,
-        capture_output=True,
-        text=True,
-        check=True,
+        [path], input=input_str, capture_output=True, text=True, check=True
     )
 
-    output_lines = result.stdout.strip().split("\n")
-    cpp_answers = np.array([float(line) for line in output_lines])
-    cpp_time_ns = _parse_time_from_stderr(result.stderr)
-    return cpp_answers, cpp_time_ns
+    outputs = np.array([float(line) for line in result.stdout.strip().split("\n")])
+
+    time_ns = 0
+    for line in result.stderr.strip().split("\n"):
+        if line.startswith("time_ns:"):
+            time_ns = int(line.split(":", 1)[1])
+            break
+
+    return outputs, time_ns / 1e9
 
 
-def compare_results(scipy_answers: np.ndarray, cpp_answers: np.ndarray):
-    """Calculates and prints the final error between the two results."""
-    # Filter out both NaN and infinity values
-    valid_indices = np.isfinite(cpp_answers)
+def compute_error(reference: np.ndarray, results: np.ndarray) -> dict:
+    valid = np.isfinite(results)
+    if not valid.any():
+        return {"max": float("inf"), "mean": float("inf"), "valid_count": 0}
 
-    num_invalid = len(cpp_answers) - np.sum(valid_indices)
-
-    if len(scipy_answers) != len(cpp_answers):
-        print(
-            f"Error: Mismatched results! SciPy: {len(scipy_answers)}, C++: {len(cpp_answers)}"
-        )
-        return
-
-    if np.sum(valid_indices) == 0:
-        print(f"\nNo valid (finite) values to compare!")
-        return
-
-    abs_error = np.abs(scipy_answers[valid_indices] - cpp_answers[valid_indices])
-    max_error = np.max(abs_error)
-
-    print(f"\nProcessed {len(cpp_answers)} numbers ({num_invalid} invalid/infinite).")
-    print(f"Maximum Error (vs SciPy): {max_error: .2e}")
+    errors = np.abs(reference[valid] - results[valid])
+    return {
+        "max": np.max(errors),
+        "mean": np.mean(errors),
+        "valid_count": np.sum(valid),
+    }
 
 
 if __name__ == "__main__":
-
     test_data = generate_test_data(NUM_TESTS)
-    scipy_answers = get_scipy_answers(test_data)
+    reference = get_scipy_reference(test_data)
 
-    cpp_results, cpp_time_ns = run_cpp_test(CPP_BATCH_PROGRAM, test_data)
-    print("\n--- Performance Report ---")
-    if cpp_time_ns > 0:
-        print(f"C++ ${CPP_BATCH_PROGRAM} core math took: {cpp_time_ns / 1.0e9:.4f}s")
-    else:
-        print("C++ ${CPP_BATCH_PROGRAM} did not report a valid time.")
-    compare_results(scipy_answers, cpp_results)
+    print("=" * 100)
+    print("BENCHMARK RESULTS")
+    print("=" * 100)
+    print(
+        f"{'Program':<45} {'Time (s)':>10} {'Throughput':>12} {'Speedup':>12} {'Max Error':>12}"
+    )
+    print("-" * 100)
 
-    # cpp_results, cpp_time_ns = run_cpp_test(CPP_BASE_PROGRAM, test_data)
-    # print("\n--- Performance Report ---")
-    # if cpp_time_ns > 0:
-    #     print(f"C++ ${CPP_BASE_PROGRAM} core math took: {cpp_time_ns / 1.0e9:.4f}s")
-    # else:
-    #     print("C++ ${CPP_BASE_PROGRAM} did not report a valid time.")
+    baseline_time = None
+    for path, description in PROGRAMS:
+        try:
+            results, elapsed = run_program(path, test_data)
+            error = compute_error(reference, results)
 
-    # compare_results(scipy_answers, cpp_results)
+            throughput = NUM_TESTS / elapsed / 1e6
+            if baseline_time is None:
+                baseline_time = elapsed
+                speedup_str = "(baseline)"
+            else:
+                speedup = baseline_time / elapsed
+                speedup_str = f"({speedup:.1f}x)"
+
+            print(
+                f"{description:<45} {elapsed:>10.4f} "
+                f"{throughput:>8.1f} M/s {speedup_str:>12} {error['max']:>12.2e}"
+            )
+
+        except Exception as e:
+            print(f"{description:<45} FAILED: {e}")
+
+    print("=" * 100)
