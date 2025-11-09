@@ -33,12 +33,79 @@ target_include_directories(icn_base INTERFACE
 )
 
 # ============================================================================
-# Main Test Executable (SIMD enabled)
+# Test Executables - Different configurations for benchmarking
 # ============================================================================
+
+# SIMD + OpenMP (full optimization, no refinement for max speed)
+add_executable(probit_simd_omp src/main.cpp)
+target_link_libraries(probit_simd_omp PRIVATE
+    icn
+    OpenMP::OpenMP_CXX
+)
+target_compile_options(probit_simd_omp PRIVATE
+    -mavx
+    -mfma
+    -fno-math-errno
+)
+
+# SIMD only (no OpenMP, with refinement)
+add_executable(probit_simd_single src/main.cpp)
+target_link_libraries(probit_simd_single PRIVATE
+    icn
+)
+target_compile_options(probit_simd_single PRIVATE
+    -mavx
+    -mfma
+    -fno-math-errno
+)
+target_compile_definitions(probit_simd_single PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+)
+
+# No SIMD + OpenMP (threading only)
+add_executable(probit_scalar_omp src/main.cpp)
+target_link_libraries(probit_scalar_omp PRIVATE
+    icn
+    OpenMP::OpenMP_CXX
+)
+target_compile_definitions(probit_scalar_omp PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+    ICN_DISABLE_SIMD
+)
+
+# No SIMD + No OpenMP (pure scalar, single-threaded)
+add_executable(probit_scalar_single src/main.cpp)
+target_link_libraries(probit_scalar_single PRIVATE
+    icn
+)
+target_compile_definitions(probit_scalar_single PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+)
+
+# Default target (alias to full optimization)
 add_executable(probit src/main.cpp)
-target_link_libraries(probit PRIVATE icn OpenMP::OpenMP_CXX mvec m)
-target_compile_options(probit PRIVATE -mavx2 -mfma)
-target_compile_definitions(probit PRIVATE ICN_ENABLE_HALLEY_REFINEMENT)
+target_link_libraries(probit PRIVATE
+    icn
+    OpenMP::OpenMP_CXX
+)
+target_compile_options(probit PRIVATE
+    -mavx
+    -mfma
+    -fno-math-errno
+)
+target_compile_definitions(probit PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+)
+
+# Baseline (using InverseCumulativeNormalBase.h with bisection)
+add_executable(probit_base src/main.cpp)
+target_link_libraries(probit_base PRIVATE
+    icn_base
+)
+target_compile_definitions(probit_base PRIVATE
+    ICN_ENABLE_HALLEY_REFINEMENT
+    USE_BASE_HEADER
+)
 
 # ============================================================================
 # Batch Processing Executable (for comparison)
@@ -48,19 +115,13 @@ target_link_libraries(probit_batch PRIVATE
     icn
     OpenMP::OpenMP_CXX
 )
-target_compile_options(probit_batch PRIVATE -mavx2 -mfma)
+target_compile_options(probit_batch PRIVATE
+  -mavx
+  -mfma
+  -fno-math-errno
+)
 target_compile_definitions(probit_batch PRIVATE
     ICN_ENABLE_HALLEY_REFINEMENT
 )
 
-# ============================================================================
-# Baseline Executable
-# ============================================================================
-add_executable(probit_base src/main_base.cpp)
-target_link_libraries(probit_base PRIVATE
-    icn_base
-    OpenMP::OpenMP_CXX
-)
-target_compile_definitions(probit_base PRIVATE
-    ICN_ENABLE_HALLEY_REFINEMENT
-)
+

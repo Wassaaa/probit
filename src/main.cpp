@@ -1,16 +1,28 @@
-#include "InverseCumulativeNormal.h"
+#ifdef USE_BASE_HEADER
+# include "InverseCumulativeNormalBase.h"
+#else
+# include "InverseCumulativeNormal.h"
+#endif
+
 #include <iostream>
 #include <vector>
 #include <chrono>
 #include <random>
 #include <iomanip>
-#include <omp.h>
+#include <atomic>
 
-int main() {
+#ifdef _OPENMP
+# include <omp.h>
+#endif
+
+int main(int argc, char *argv[]) {
     quant::InverseCumulativeNormal icn; // mean=0, sigma=1
 
     // Generate test data - focus on central region for SIMD fast path
-    constexpr size_t N = 10'000'000;
+    size_t N = 10'000'000;
+    if (argc > 1) {
+        N = std::stoull(argv[1]);
+    }
     std::cout << "Generating " << N << " test values...\n";
 
     std::vector<double> probabilities(N);
@@ -19,10 +31,11 @@ int main() {
     // Use fixed seed for reproducibility
     std::uniform_real_distribution<double> dist(0.1, 0.9); // Central region
 
+    // Thread-local counter for unique seeds
+    static std::atomic<int> thread_counter{0};
 #pragma omp parallel
     {
-        // Each thread gets its own RNG with different seed
-        int tid = omp_get_thread_num();
+        int tid = thread_counter.fetch_add(1);
         std::mt19937_64 rng(12345 + tid);
 
 #pragma omp for schedule(static)

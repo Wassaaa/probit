@@ -7,8 +7,12 @@
 #include <iostream>
 #include <omp.h>
 
-#ifdef __AVX2__
-#include <immintrin.h>
+#if defined(__AVX__) && !defined(ICN_USE_SIMD) && !defined(ICN_DISABLE_SIMD)
+# define ICN_USE_SIMD
+#endif
+
+#ifdef ICN_USE_SIMD
+# include <immintrin.h>
 #endif
 
 namespace quant {
@@ -25,70 +29,14 @@ namespace quant {
 
         // Vector overload: out[i] = average + sigma * Φ^{-1}(in[i]) for i in [0, n)
         inline void operator()(const double *in, double *out, std::size_t n) const {
-#ifdef __AVX2__
-            // SIMD path: process 4 doubles at once
-            __m256d vec_avg = _mm256_set1_pd(average_);
-            __m256d vec_sigma = _mm256_set1_pd(sigma_);
-            __m256d vec_low = _mm256_set1_pd(x_low_);
-            __m256d vec_high = _mm256_set1_pd(x_high_);
-
-            std::size_t n_chunks = n / 4;
-// Process 4 at a time with SIMD
-#pragma omp parallel for
-            for (std::size_t chunk = 0; chunk < n_chunks; ++chunk) {
-                // Load 4 input probabilities
-                std::size_t i = chunk * 4;
-                __m256d vec_x = _mm256_loadu_pd(&in[i]);
-
-                // Check if all 4 values are in central region
-                __m256d is_central_mask =
-                    _mm256_and_pd(_mm256_cmp_pd(vec_x, vec_low, _CMP_GE_OQ), // x >= x_low
-                                  _mm256_cmp_pd(vec_x, vec_high, _CMP_LE_OQ) // x <= x_high
-                    );
-
-                // Get mask bits for handling non-central with scalar
-                int mask_bits = _mm256_movemask_pd(is_central_mask);
-
-                // Calculate standardized z values (SIMD for all, then fix non-central)
-                alignas(32) double z_values[4];
-                __m256d vec_z = standard_value_simd_central(vec_x);
-                _mm256_store_pd(z_values, vec_z);
-
-                // Fix non-central values and apply Halley refinement to all
-                for (int j = 0; j < 4; j++) {
-                    if (!(mask_bits & (1 << j))) {
-                        // non-central, calculate with scalar and Halley refine
-                        double x_val = in[i + j];
-                        z_values[j] = standard_value(x_val);
-                    } else {
-
-#ifdef ICN_ENABLE_HALLEY_REFINEMENT
-                        // scalar refine on all central also
-                        z_values[j] = halley_refine(z_values[j], in[i + j]);
-                    }
-#endif
-                }
-
-                // Load refined z values back to SIMD and apply sigma/average transform
-                __m256d vec_z_refined = _mm256_load_pd(z_values);
-                __m256d vec_result = _mm256_fmadd_pd(vec_sigma, vec_z_refined, vec_avg);
-                _mm256_storeu_pd(&out[i], vec_result);
-            }
-            // Handle remaining elements
-            for (size_t i = n_chunks * 4; i < n; ++i) {
-                out[i] = average_ + sigma_ * standard_value(in[i]);
-            }
+#ifdef ICN_USE_SIMD
+            process_vector_simd(in, out, n);
 #else
-            // Scalar fallback
-            for (std::size_t i = 0; i < n; ++i) {
-                out[i] = average_ + sigma_ * standard_value(in[i]);
-            }
+            process_vector_scalar(in, out, n);
 #endif
         }
 
         // Standardized value: inverse CDF with average=0, sigma=1.
-        // Baseline: deliberately crude but correct bisection. Replace internals with your faster
-        // method.
         static inline double standard_value(double x) {
             // Handle edge and invalid cases defensively.
             if (x <= 0.0) return -std::numeric_limits<double>::infinity();
@@ -111,9 +59,66 @@ namespace quant {
         }
 
     private:
-        // ---- SIMD optimized functions --------------------------------------------
+#ifdef ICN_USE_SIMD
+        // SIMD vector processing (AVX + FMA)
+        inline void process_vector_simd(const double *in, double *out, std::size_t n) const {
+            __m256d vec_avg = _mm256_set1_pd(average_);
+            __m256d vec_sigma = _mm256_set1_pd(sigma_);
+            __m256d vec_low = _mm256_set1_pd(x_low_);
+            __m256d vec_high = _mm256_set1_pd(x_high_);
 
-#ifdef __AVX2__
+            std::size_t n_chunks = n / 4;
+# pragma omp parallel for
+            for (std::size_t chunk = 0; chunk < n_chunks; ++chunk) {
+                std::size_t i = chunk * 4;
+                __m256d vec_x = _mm256_loadu_pd(&in[i]);
+
+                // Check if all 4 values are in central region
+                __m256d is_central_mask = _mm256_and_pd(_mm256_cmp_pd(vec_x, vec_low, _CMP_GE_OQ),
+                                                        _mm256_cmp_pd(vec_x, vec_high, _CMP_LE_OQ));
+
+                int mask_bits = _mm256_movemask_pd(is_central_mask);
+
+                // Calculate standardized z values (SIMD for all, then fix non-central)
+                alignas(32) double z_values[4];
+                __m256d vec_z = standard_value_simd_central(vec_x);
+                _mm256_store_pd(z_values, vec_z);
+
+                // Fix non-central values and apply Halley refinement to all
+                for (int j = 0; j < 4; j++) {
+                    if (!(mask_bits & (1 << j))) {
+                        // Non-central: use scalar path with refinement
+                        z_values[j] = standard_value(in[i + j]);
+                    } else {
+# ifdef ICN_ENABLE_HALLEY_REFINEMENT
+                        // Central: apply Halley refinement to SIMD result
+                        z_values[j] = halley_refine(z_values[j], in[i + j]);
+# endif
+                    }
+                }
+
+                // Load refined z values and apply transform
+                __m256d vec_z_refined = _mm256_load_pd(z_values);
+                __m256d vec_result = _mm256_fmadd_pd(vec_sigma, vec_z_refined, vec_avg);
+                _mm256_storeu_pd(&out[i], vec_result);
+            }
+
+            // Handle remaining elements
+            for (size_t i = n_chunks * 4; i < n; ++i) {
+                out[i] = average_ + sigma_ * standard_value(in[i]);
+            }
+        }
+#endif
+
+        // Scalar vector processing fallback
+        inline void process_vector_scalar(const double *in, double *out, std::size_t n) const {
+#pragma omp parallel for
+            for (std::size_t i = 0; i < n; ++i) {
+                out[i] = average_ + sigma_ * standard_value(in[i]);
+            }
+        }
+
+#ifdef ICN_USE_SIMD
         // SIMD version of central_value_rational for 4 doubles at once
         static inline __m256d standard_value_simd_central(__m256d vec_x) {
             // q = x - 0.5
@@ -157,43 +162,6 @@ namespace quant {
             constexpr double INV_SQRT_2 =
                 0.707106781186547524400844362104849039284835937688474036588; // 1/√2
             return 0.5 * std::erfc(-z * INV_SQRT_2);
-        }
-
-        // Crude but reliable invert via bisection; brackets wide enough for double tails.
-        static inline double invert_bisect(double x) {
-            // Monotone Φ(z); find z with Φ(z)=x.
-            double lo = -12.0;
-            double hi = 12.0;
-            // Tighten bracket using symmetry for speed (optional micro-optimization).
-            if (x < 0.5) {
-                hi = 0.0;
-            } else {
-                lo = 0.0;
-            }
-
-            // Bisection iterations: ~60 is enough for double precision on this interval.
-            for (int iter = 0; iter < 80; ++iter) {
-                double mid = 0.5 * (lo + hi);
-                double cdf = Phi(mid);
-                if (cdf < x) {
-                    lo = mid;
-                } else {
-                    hi = mid;
-                }
-            }
-            return 0.5 * (lo + hi);
-        }
-
-        // Baseline central-region value: currently just bisection.
-        static inline double central_value_baseline(double x) {
-            // TODO(candidate): Replace with rational approximation around x≈0.5
-            return invert_bisect(x);
-        }
-
-        // Baseline tail handler: currently just bisection (slow for extreme x).
-        static inline double tail_value_baseline(double x) {
-            // TODO(candidate): Implement tail mapping t = sqrt(-2*log(m)) with rational in t
-            return invert_bisect(x);
         }
 
         // Polynomial evaluation, Horner's method

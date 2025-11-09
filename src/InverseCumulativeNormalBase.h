@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <limits>
 #include <algorithm>
-#include <array>
 
 namespace quant {
 
@@ -34,13 +33,13 @@ namespace quant {
 
             // Piecewise structure left in place so you can drop in rational approximations.
             if (x < x_low_ || x > x_high_) {
-                double z = tail_value_baseline(x);
+                double z = tail_value_baseline(x); // << replace with tail mapping + rational
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
 #endif
                 return z;
             } else {
-                double z = tail_value_baseline(x);
+                double z = central_value_baseline(x); // << replace with central-region rational
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
 #endif
@@ -103,71 +102,18 @@ namespace quant {
             return invert_bisect(x);
         }
 
-        // Polynomial evaluation, Horner's method
-        template <size_t N>
-        static inline double polynomial(double x, const std::array<double, N> &coeffs) {
-            double result = 0.0;
-            for (double c : coeffs) {
-                result = result * x + c;
-            }
-            return result;
-        }
-
-        static inline double central_value_rational(double x) {
-            double q = x - 0.5;
-            double r = q * q;
-            return q * polynomial(r, A_) / polynomial(r, B_);
-        }
-
-        static inline double tail_value_rational(double x) {
-            double q;
-            if (x <= x_low_) {
-                q = std::sqrt(-2.0 * std::log(x));
-            } else {
-                q = std::sqrt(-2.0 * std::log(1.0 - x));
-            }
-
-            double z = polynomial(q, C_) / polynomial(q, D_);
-
-            return (x < x_low_) ? z : -z;
-        }
-
 #ifdef ICN_ENABLE_HALLEY_REFINEMENT
-        // Use logarithmic form with expm1 to compute the difference on the extreme tails.
+        // One-step Halley refinement (3rd order). Usually brings result to full double precision.
         static inline double halley_refine(double z, double x) {
-            constexpr double TAIL_THRESHOLD = 1e-5;
-            const double p = phi(z); // φ(z) = PDF value
-            double r;                // The residual: (Φ(z) - x) / φ(z)
-
-            if (x > 1.0 - TAIL_THRESHOLD) {
-                // Right tail (x > 0.5): y = 1 - x ≪ 1 and q = Q(z) = 1 - Φ(z)
-                // Formula: r = -y × expm1(log(q) - log(y)) / φ(z)
-                const double y = 1.0 - x;
-                const double q = Phi(-z); // Q(z) = 1 - Φ(z) = Φ(-z) by symmetry
-                r = -y * std::expm1(std::log(q) - std::log(y)) /
-                    std::max(p, std::numeric_limits<double>::min());
-
-            } else if (x < TAIL_THRESHOLD) {
-                // Left tail (x < 0.5): y = x ≪ 1 and a = Φ(z)
-                // Formula: r = y × expm1(log(a) - log(y)) / φ(z)
-                const double y = x;
-                const double a = Phi(z);
-                r = y * std::expm1(std::log(a) - std::log(y)) /
-                    std::max(p, std::numeric_limits<double>::min());
-
-            } else {
-                // Central region: x not extreme, direct computation is stable
-                // Simply compute r = (Φ(z) - x) / φ(z) directly
-                const double f = Phi(z);
-                r = (f - x) / std::max(p, std::numeric_limits<double>::min());
-            }
-
-            // Apply Halley's method correction: z_new = z - r / (1 - 0.5*z*r)
+            // r = (Φ(z) - x) / φ(z)
+            const double f = Phi(z);
+            const double p = phi(z);
+            const double r = (f - x) / std::max(p, std::numeric_limits<double>::min());
+            // Halley: z_{new} = z - r / (1 - 0.5*z*r)
             const double denom = 1.0 - 0.5 * z * r;
-            const double correction =
-                r / (denom != 0.0 ? denom
-                                  : std::copysign(std::numeric_limits<double>::infinity(), denom));
-            return z - correction;
+            return z - r / (denom != 0.0
+                                ? denom
+                                : std::copysign(std::numeric_limits<double>::infinity(), denom));
         }
 #endif
 
@@ -178,39 +124,6 @@ namespace quant {
         // Region split (you may adjust in your improved version).
         static constexpr double x_low_ = 0.02425; // ~ Φ(-2.0)
         static constexpr double x_high_ = 1.0 - x_low_;
-
-        // Acklam's coefficients
-        static constexpr std::array<double, 6> A_ = {
-            -3.969683028665376e+01, //
-            2.209460984245205e+02,  //
-            -2.759285104469687e+02, //
-            1.383577518672690e+02,  //
-            -3.066479806614716e+01, //
-            2.506628277459239e+00   //
-        };
-        static constexpr std::array<double, 6> B_ = {
-            -5.447609879822406e+01, //
-            1.615858368580409e+02,  //
-            -1.556989798598866e+02, //
-            6.680131188771972e+01,  //
-            -1.328068155288572e+01, //
-            1.0                     //
-        };
-        static constexpr std::array<double, 6> C_ = {
-            -7.784894002430293e-03, //
-            -3.223964580411365e-01, //
-            -2.400758277161838e+00, //
-            -2.549732539343734e+00, //
-            4.374664141464968e+00,  //
-            2.938163982698783e+00   //
-        };
-        static constexpr std::array<double, 5> D_ = {
-            7.784695709041462e-03, //
-            3.224671290700398e-01, //
-            2.445134137142996e+00, //
-            3.754408661907416e+00, //
-            1.0                    //
-        };
     };
 
 } // namespace quant
