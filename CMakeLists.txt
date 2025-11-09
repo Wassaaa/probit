@@ -82,7 +82,7 @@ target_compile_definitions(probit_scalar_single PRIVATE
     ICN_ENABLE_HALLEY_REFINEMENT
 )
 
-# Default target (alias to full optimization)
+# Default target
 add_executable(probit src/main.cpp)
 target_link_libraries(probit PRIVATE
     icn

@@ -43,6 +43,32 @@ python calibration.py  # Requires: numpy, scipy
 
 Compares against SciPy's `norm.ppf` on 1M test points and reports throughput, speedup, and error metrics.
 
+## Usage
+
+The `probit` executable reads probabilities from stdin (one per line or space-separated) and outputs the corresponding z-scores:
+
+```bash
+# Pipe values directly
+echo "0.025 0.5 0.975" | ./build/probit
+# Output: -1.9599639845400545  0.0000000000000000  1.9599639845400545
+
+# Or from a file
+cat probabilities.txt | ./build/probit
+
+# Interactive mode (type values, then Ctrl+D to close stdin and see results)
+./build/probit
+0.1
+0.5
+0.9
+^D  # Press Ctrl+D (Linux/Mac) or Ctrl+Z then Enter (Windows)
+```
+
+Timing information is printed to stderr, so redirect stdout to capture only the results:
+
+```bash
+echo "0.975" | ./build/probit > output.txt
+```
+
 ## API Usage
 
 ```cpp
