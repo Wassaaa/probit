@@ -4,12 +4,12 @@
 # include "InverseCumulativeNormal.h"
 #endif
 
-#include <iostream>
-#include <vector>
-#include <chrono>
-#include <random>
-#include <iomanip>
 #include <atomic>
+#include <chrono>
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <vector>
 
 int main(int argc, char *argv[]) {
     quant::InverseCumulativeNormal icn; // mean=0, sigma=1

@@ -4,10 +4,10 @@
 # include "InverseCumulativeNormal.h"
 #endif
 
-#include <iostream>
-#include <vector>
 #include <chrono>
 #include <iomanip>
+#include <iostream>
+#include <vector>
 
 int main() {
     std::ios_base::sync_with_stdio(false);
