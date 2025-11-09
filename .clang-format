@@ -21,7 +21,8 @@
 # The number of columns used for tab stops.
 # TabWidth: 4
 
-
+IndentPPDirectives: AfterHash
+PPIndentWidth: 1
 
 # IndentWidth (unsigned)
 # The number of columns to use for indentation.
