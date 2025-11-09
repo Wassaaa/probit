@@ -7,7 +7,7 @@ from typing import Tuple
 
 NUM_TESTS = 1_000_000
 
-CPP_BATCH_PROGRAM = "../build/probit"
+CPP_BATCH_PROGRAM = "../build/probit_batch"
 CPP_BASE_PROGRAM = "../build/probit_base"
 # ---------------------
 
@@ -108,11 +108,11 @@ if __name__ == "__main__":
         print("C++ ${CPP_BATCH_PROGRAM} did not report a valid time.")
     compare_results(scipy_answers, cpp_results)
 
-    cpp_results, cpp_time_ns = run_cpp_test(CPP_BASE_PROGRAM, test_data)
-    print("\n--- Performance Report ---")
-    if cpp_time_ns > 0:
-        print(f"C++ ${CPP_BASE_PROGRAM} core math took: {cpp_time_ns / 1.0e9:.4f}s")
-    else:
-        print("C++ ${CPP_BASE_PROGRAM} did not report a valid time.")
+    # cpp_results, cpp_time_ns = run_cpp_test(CPP_BASE_PROGRAM, test_data)
+    # print("\n--- Performance Report ---")
+    # if cpp_time_ns > 0:
+    #     print(f"C++ ${CPP_BASE_PROGRAM} core math took: {cpp_time_ns / 1.0e9:.4f}s")
+    # else:
+    #     print("C++ ${CPP_BASE_PROGRAM} did not report a valid time.")
 
-    compare_results(scipy_answers, cpp_results)
+    # compare_results(scipy_answers, cpp_results)
