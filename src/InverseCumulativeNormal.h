@@ -62,6 +62,7 @@ namespace quant {
 #ifdef ICN_USE_SIMD
         // SIMD vector processing (AVX + FMA)
         inline void process_vector_simd(const double *in, double *out, std::size_t n) const {
+
             __m256d vec_avg = _mm256_set1_pd(average_);
             __m256d vec_sigma = _mm256_set1_pd(sigma_);
             __m256d vec_low = _mm256_set1_pd(x_low_);

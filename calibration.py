@@ -58,13 +58,13 @@ if __name__ == "__main__":
     test_data = generate_test_data(NUM_TESTS)
     reference = get_scipy_reference(test_data)
 
-    print("=" * 100)
+    print("=" * 115)
     print("BENCHMARK RESULTS")
-    print("=" * 100)
+    print("=" * 115)
     print(
-        f"{'Program':<45} {'Time (s)':>10} {'Throughput':>12} {'Speedup':>12} {'Max Error':>12}"
+        f"{'Program':<45} {'Time (s)':>10} {'Throughput':>12} {'Speedup':>12} {'Max Error':>12} {'Mean Error':>12}"
     )
-    print("-" * 100)
+    print("-" * 115)
 
     baseline_time = None
     for path, description in PROGRAMS:
@@ -82,10 +82,10 @@ if __name__ == "__main__":
 
             print(
                 f"{description:<45} {elapsed:>10.4f} "
-                f"{throughput:>8.1f} M/s {speedup_str:>12} {error['max']:>12.2e}"
+                f"{throughput:>8.1f} M/s {speedup_str:>12} {error['max']:>12.2e} {error['mean']:>12.2e}"
             )
 
         except Exception as e:
             print(f"{description:<45} FAILED: {e}")
 
-    print("=" * 100)
+    print("=" * 115)
