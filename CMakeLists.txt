@@ -33,14 +33,23 @@ target_include_directories(icn_base INTERFACE
 )
 
 # ============================================================================
-# Optimized Executable
+# Main Test Executable (SIMD enabled)
 # ============================================================================
-add_executable(probit src/main_batch.cpp)
-target_link_libraries(probit PRIVATE
+add_executable(probit src/main.cpp)
+target_link_libraries(probit PRIVATE icn OpenMP::OpenMP_CXX mvec m)
+target_compile_options(probit PRIVATE -mavx2 -mfma)
+target_compile_definitions(probit PRIVATE ICN_ENABLE_HALLEY_REFINEMENT)
+
+# ============================================================================
+# Batch Processing Executable (for comparison)
+# ============================================================================
+add_executable(probit_batch src/main_batch.cpp)
+target_link_libraries(probit_batch PRIVATE
     icn
     OpenMP::OpenMP_CXX
 )
-target_compile_definitions(probit PRIVATE
+target_compile_options(probit_batch PRIVATE -mavx2 -mfma)
+target_compile_definitions(probit_batch PRIVATE
     ICN_ENABLE_HALLEY_REFINEMENT
 )
 
