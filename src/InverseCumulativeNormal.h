@@ -4,8 +4,12 @@
 #include <limits>
 #include <algorithm>
 #include <array>
-#include <omp.h>
 #include <iostream>
+#include <omp.h>
+
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
 
 namespace quant {
 
@@ -21,10 +25,65 @@ namespace quant {
 
         // Vector overload: out[i] = average + sigma * Φ^{-1}(in[i]) for i in [0, n)
         inline void operator()(const double *in, double *out, std::size_t n) const {
-            #pragma omp parallel for
+#ifdef __AVX2__
+            // SIMD path: process 4 doubles at once
+            __m256d vec_avg = _mm256_set1_pd(average_);
+            __m256d vec_sigma = _mm256_set1_pd(sigma_);
+            __m256d vec_low = _mm256_set1_pd(x_low_);
+            __m256d vec_high = _mm256_set1_pd(x_high_);
+
+            std::size_t n_chunks = n / 4;
+// Process 4 at a time with SIMD
+#pragma omp parallel for
+            for (std::size_t chunk = 0; chunk < n_chunks; ++chunk) {
+                // Load 4 input probabilities
+                std::size_t i = chunk * 4;
+                __m256d vec_x = _mm256_loadu_pd(&in[i]);
+
+                // Check if all 4 values are in central region
+                __m256d is_central_mask =
+                    _mm256_and_pd(_mm256_cmp_pd(vec_x, vec_low, _CMP_GE_OQ), // x >= x_low
+                                  _mm256_cmp_pd(vec_x, vec_high, _CMP_LE_OQ) // x <= x_high
+                    );
+
+                // Get mask bits for handling non-central with scalar
+                int mask_bits = _mm256_movemask_pd(is_central_mask);
+
+                // Calculate standardized z values (SIMD for all, then fix non-central)
+                alignas(32) double z_values[4];
+                __m256d vec_z = standard_value_simd_central(vec_x);
+                _mm256_store_pd(z_values, vec_z);
+
+                // Fix non-central values and apply Halley refinement to all
+                for (int j = 0; j < 4; j++) {
+                    if (!(mask_bits & (1 << j))) {
+                        // non-central, calculate with scalar and Halley refine
+                        double x_val = in[i + j];
+                        z_values[j] = standard_value(x_val);
+                    } else {
+
+#ifdef ICN_ENABLE_HALLEY_REFINEMENT
+                        // scalar refine on all central also
+                        z_values[j] = halley_refine(z_values[j], in[i + j]);
+                    }
+#endif
+                }
+
+                // Load refined z values back to SIMD and apply sigma/average transform
+                __m256d vec_z_refined = _mm256_load_pd(z_values);
+                __m256d vec_result = _mm256_fmadd_pd(vec_sigma, vec_z_refined, vec_avg);
+                _mm256_storeu_pd(&out[i], vec_result);
+            }
+            // Handle remaining elements
+            for (size_t i = n_chunks * 4; i < n; ++i) {
+                out[i] = average_ + sigma_ * standard_value(in[i]);
+            }
+#else
+            // Scalar fallback
             for (std::size_t i = 0; i < n; ++i) {
                 out[i] = average_ + sigma_ * standard_value(in[i]);
             }
+#endif
         }
 
         // Standardized value: inverse CDF with average=0, sigma=1.
@@ -38,22 +97,53 @@ namespace quant {
             // Piecewise structure left in place so you can drop in rational approximations.
             if (x < x_low_ || x > x_high_) {
                 double z = tail_value_rational(x);
-                #ifdef ICN_ENABLE_HALLEY_REFINEMENT
+#ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
-                #endif
+#endif
                 return z;
             } else {
                 double z = central_value_rational(x);
-                #ifdef ICN_ENABLE_HALLEY_REFINEMENT
+#ifdef ICN_ENABLE_HALLEY_REFINEMENT
                 z = halley_refine(z, x);
-                #endif
+#endif
                 return z;
             }
         }
 
     private:
-        // ---- Baseline numerics (intentionally slow but stable) ------------------
+        // ---- SIMD optimized functions --------------------------------------------
 
+#ifdef __AVX2__
+        // SIMD version of central_value_rational for 4 doubles at once
+        static inline __m256d standard_value_simd_central(__m256d vec_x) {
+            // q = x - 0.5
+            __m256d vec_half = _mm256_set1_pd(0.5);
+            __m256d vec_q = _mm256_sub_pd(vec_x, vec_half);
+
+            // r = q * q
+            __m256d vec_r = _mm256_mul_pd(vec_q, vec_q);
+
+            // Evaluate numerator polynomial A(r) using Horner's method with FMA
+            __m256d vec_num = _mm256_set1_pd(A_[0]);
+            for (size_t i = 1; i < A_.size(); ++i) {
+                vec_num = _mm256_fmadd_pd(vec_num, vec_r, _mm256_set1_pd(A_[i]));
+            }
+
+            // Evaluate denominator polynomial B(r) using Horner's method with FMA
+            __m256d vec_den = _mm256_set1_pd(B_[0]);
+            for (size_t i = 1; i < B_.size(); ++i) {
+                vec_den = _mm256_fmadd_pd(vec_den, vec_r, _mm256_set1_pd(B_[i]));
+            }
+
+            // result = q * (num / den)
+            __m256d vec_ratio = _mm256_div_pd(vec_num, vec_den);
+            __m256d vec_result = _mm256_mul_pd(vec_q, vec_ratio);
+
+            return vec_result;
+        }
+#endif
+
+        // ---- Baseline numerics (intentionally slow but stable) ------------------        //
         // Standard normal pdf
         static inline double phi(double z) {
             // 1/sqrt(2π) * exp(-z^2 / 2)
@@ -135,7 +225,7 @@ namespace quant {
             return (x < x_low_) ? z : -z;
         }
 
-        #ifdef ICN_ENABLE_HALLEY_REFINEMENT
+#ifdef ICN_ENABLE_HALLEY_REFINEMENT
         // Use logarithmic form with expm1 to compute the difference on the extreme tails.
         static inline double halley_refine(double z, double x) {
             constexpr double TAIL_THRESHOLD = 1e-5;
@@ -172,7 +262,7 @@ namespace quant {
                                   : std::copysign(std::numeric_limits<double>::infinity(), denom));
             return z - correction;
         }
-        #endif
+#endif
 
         // ---- State & constants ---------------------------------------------------
 
