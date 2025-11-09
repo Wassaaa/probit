@@ -106,22 +106,3 @@ target_compile_definitions(probit_base PRIVATE
     ICN_ENABLE_HALLEY_REFINEMENT
     USE_BASE_HEADER
 )
-
-# ============================================================================
-# Batch Processing Executable (for comparison)
-# ============================================================================
-add_executable(probit_nopy src/main_nopy.cpp)
-target_link_libraries(probit_nopy PRIVATE
-    icn
-    OpenMP::OpenMP_CXX
-)
-target_compile_options(probit_nopy PRIVATE
-  -mavx
-  -mfma
-  -fno-math-errno
-)
-target_compile_definitions(probit_nopy PRIVATE
-    # ICN_ENABLE_HALLEY_REFINEMENT
-)
-
-
