@@ -7,8 +7,8 @@ from typing import Tuple
 
 NUM_TESTS = 1_000_000
 
-CPP_BATCH_PROGRAM = "../build/probit_batch"
-CPP_BASE_PROGRAM = "../build/probit_base"
+CPP_BATCH_PROGRAM = "./build/probit_batch"
+CPP_BASE_PROGRAM = "./build/probit_base"
 # ---------------------
 
 
