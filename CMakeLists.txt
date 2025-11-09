@@ -110,18 +110,18 @@ target_compile_definitions(probit_base PRIVATE
 # ============================================================================
 # Batch Processing Executable (for comparison)
 # ============================================================================
-add_executable(probit_batch src/main_batch.cpp)
-target_link_libraries(probit_batch PRIVATE
+add_executable(probit_nopy src/main_nopy.cpp)
+target_link_libraries(probit_nopy PRIVATE
     icn
     OpenMP::OpenMP_CXX
 )
-target_compile_options(probit_batch PRIVATE
+target_compile_options(probit_nopy PRIVATE
   -mavx
   -mfma
   -fno-math-errno
 )
-target_compile_definitions(probit_batch PRIVATE
-    ICN_ENABLE_HALLEY_REFINEMENT
+target_compile_definitions(probit_nopy PRIVATE
+    # ICN_ENABLE_HALLEY_REFINEMENT
 )
 
 
